@@ -1,38 +1,102 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# ChatGPT
 
-## Getting Started
+## Web app using React, NextJS 13 with Server and Client components, Typescript, OpenAI ChatGPT API, Firebase, Firestore, Firebase Admin, NextAuth with Firebase, useSWR, React-Select, React Hot Toast, TailwindCSS
 
-First, run the development server:
+API: `https://api.openai.com/v1/chat/completions`
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
+### File and Folder structure
+
+The app folder contains the application wide layout, as well as the navigation routes
+
+```
+Root ('/')
+
+Layout
+|
+├──Login (if not logged in)
+|
+├───SideBar
+|   └──NewChat <==> routes to `/chat/chatId`
+|   └──ModelSelection <==> calls `api/getModels`
+|   └──ChatRow <==> routes to `/chat/chatId`
+|
+└───Page
+
+Sub Route ('/chat')
+
+Page
+|
+├───Chat
+|   └──Message
+|
+└──ChatInput <==> calls '/api/askQuestion'
+
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### API Routes
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+pages/api/getModels -> Gets all the Chat Engines or models from the openai api.  
+pages/api/askQuestions -> Call the ChatGPT api to get a response to the user's prompt. And save the response message to the db.
 
-[API routes](https://nextjs.org/docs/api-routes/introduction) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.ts`.
+#### State
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/api-routes/introduction) instead of React pages.
+> SWR was used to manage serverside state
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+    // Set the model in one component with a setModel function
+    const { data: model, mutate: setModel } = useSWR("model", {
+      fallbackData: "text-davinci-003",
+    });
 
-## Learn More
+    // retrieve the model from SWR cache
+    const { data: model } = useSWR("model", {
+      fallbackData: "text-davinci-003",
+    });
 
-To learn more about Next.js, take a look at the following resources:
+### FireStore Data Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+> database -> 'users' collection -> Email documents -> 'chats' collection -> ChatId documents -> 'messages' collection -> messageId documents -> message
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+To read data client side:
 
-## Deploy on Vercel
+    // Retrieve all messages from the db
+    const [messages, loading, error] = useCollection(
+      session &&
+        query(
+          collection(db, "users", session.user?.email!, "chats", id, "messages"),
+          orderBy("createdAt", "asc")
+        )
+    );
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+To write data client side:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+    // Save the user's message to the messages collection
+    await addDoc(
+      collection(db, "users", session?.user?.email!, "chats", chatId, "messages"),
+      message
+    );
+
+To write data serverside:
+
+    // Add a message to the messages collection
+    await adminDb
+      .collection("users")
+      .doc(session?.user?.email)
+      .collection("chats")
+      .doc(chatId)
+      .collection("messages")
+      .add(message);
+
+#### Next Auth config
+
+In 'pages/api/auth/[...nextauth].js', Google was configured as the OAuth Provider.  
+In SessionProvider.tsx, a provider wrapper with the client side session is returned, which is used to wrap everything in the primary Layout.tsx.
+
+Session is obtained in a serverside component with:
+
+    import { getServerSession } from "next-auth";
+    const session = await getServerSession(authOptions);
+
+Session is obtained ina client side component with:
+
+    import { useSession } from "next-auth/react";
+    const { data: session, status } = useSession();
